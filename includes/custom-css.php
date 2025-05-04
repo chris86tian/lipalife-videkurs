@@ -3,6 +3,9 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 // Custom CSS einbinden
 function lipalife_videokurs_custom_css() {
+    // Get colors from settings
+    $complete_button_color = get_option('svl_complete_button_color', '#28a745'); // Standardfarbe als Fallback
+
     echo '<style>
     .svl-complete-button {
         position: absolute;
@@ -31,14 +34,15 @@ function lipalife_videokurs_custom_css() {
     .svl-lesson-list li a {
         display: block;
         padding: 4px 0;
+        color: #000; /* Default text color changed to black */
     }
     .svl-lesson-list li a.completed {
-        color: #28a745;
+        color: #28a745; /* Completed lessons remain green */
         font-weight: normal;
     }
     .svl-lesson-list li a.active {
         font-weight: bold;
-        color: #007bff;
+        color: ' . esc_attr($complete_button_color) . '; /* Active lesson color uses the "Abschließen" button color */
         text-decoration: underline;
     }
     .svl-term-item {

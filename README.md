@@ -1,9 +1,14 @@
 # Lipa LIFE Videokurs
 
-Version: 2.2
+Version: 2.4
 
-## Neue Funktionen in 2.2
+## Neue Funktionen in 2.4
 
+- **Kurslöschfunktion mit Sicherheitsabfrage und Export:** Eine neue Admin-Seite ermöglicht das sichere Löschen einzelner Kurse. Vor dem endgültigen Löschen wird eine Sicherheitsabfrage angezeigt und die Option geboten, den Kurs vorher zu exportieren.
+- **Lektionstextfarben angepasst:**
+    - Standard-Textfarbe für Lektionen in der Navigation ist nun Schwarz.
+    - Die Textfarbe der aktiven Lektion verwendet jetzt die Farbe des "Abschließen" Buttons.
+    - Die Textfarbe für abgeschlossene Lektionen bleibt Grün.
 - **Backend-Einstellungen für Button-Farben (erweitert):** Konfigurieren Sie nun auch die Farbe für den "Kurs starten" Button in der Kursübersicht über die Einstellungsseite im Backend.
 - **Backend-Einstellungen für Button-Farben (Lektion):** Konfigurieren Sie die Farben für die "Abschließen" und "Nochmals ansehen" Buttons bequem über eine neue Einstellungsseite im Backend.
 - **Plugin Refactoring:** Das Plugin wurde in mehrere Dateien aufgeteilt, um die Wartbarkeit und Erweiterbarkeit zu verbessern.
@@ -46,3 +51,9 @@ Version: 2.2
 ### Export/Import
 - Unter dem Admin-Menü "Kurse/Lektionen Export" können Sie die vollständige Kursstruktur (Kurs, Module und Lektionen) als hierarchische CSV-Datei exportieren.
 - Über "Kurse/Lektionen Import" können Sie eine hierarchische CSV-Datei importieren, um komplette Kurse einzufügen oder zu aktualisieren.
+
+### Kurs löschen
+- Gehen Sie zu "Videolektionen" > "Kurs löschen".
+- Wählen Sie den Kurs aus, den Sie löschen möchten.
+- Sie erhalten eine Sicherheitsabfrage und die Option, den Kurs vorher zu exportieren.
+- Bestätigen Sie die Löschung, um den Kurs, alle zugehörigen Module, Lektionen und Benutzerfortschritte unwiderruflich zu entfernen.

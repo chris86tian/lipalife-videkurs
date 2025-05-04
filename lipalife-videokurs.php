@@ -2,7 +2,7 @@
 /*
 Plugin Name: Lipa LIFE Videokurs
 Description: Videolektionen mit Kursübersicht, Fortschritt und Navigation.
-Version: 2.2
+Version: 2.4
 Author: www.lipalife.de
 */
 

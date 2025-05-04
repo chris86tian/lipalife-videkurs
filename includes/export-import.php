@@ -2,22 +2,26 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /*
-  # Hierarchischer Export/Import
-  1. Neuer Export-Mechanismus:
+  # Hierarchischer Export/Import und Kurslöschung
+  1. Export-Mechanismus:
      - Exportiert zuerst den Kurs (top-level tax-term vom Typ "kurs").
      - Exportiert direkt zugehörige Lektionen (ohne Unterbegriffe).
      - Exportiert anschließend alle Module (child-Terme) des Kurses.
      - Exportiert die Lektionen, die diesen Modulen zugeordnet sind.
-  2. Import bleibt unverändert, da er anhand der "Name" und "Parent Name" Logik arbeitet.
-  3. Hinweise:
-     - Die CSV-Spalten lauten: Type, ID, Parent ID, Name, Description, Image URL, Video Link, Menu Order.
-     - Für Hierarchien gilt:
-         • "course" für Kurse (Top-Level)
-         • "module" für untergeordnete Module
-         • "lesson" für Lektionen
+  2. Import Logik:
+     - Importiert Kurse/Module und Lektionen basierend auf "Name" und "Parent Name".
+     - Aktualisiert bestehende Einträge oder erstellt neue.
+  3. Kurslöschfunktion:
+     - Neue Admin-Seite zum Auswählen und Löschen eines Kurses.
+     - Sicherheitsabfrage vor dem Löschen.
+     - Option zum Exportieren des Kurses vor der Löschung.
+  4. Hinweise:
+     - CSV-Spalten: Type, ID, Parent ID, Name, Description, Image URL, Video Link, Menu Order.
+     - Hierarchie-Typen: "course", "module", "lesson".
 */
 
-function svl_add_export_import_menu() {
+// Admin Menü für Export/Import und Löschung
+function svl_add_export_import_delete_menu() {
     add_submenu_page(
         'edit.php?post_type=videolektion',
         'Kurse/Lektionen Export',
@@ -34,9 +38,18 @@ function svl_add_export_import_menu() {
         'svl-import',
         'svl_import_page'
     );
+    add_submenu_page(
+        'edit.php?post_type=videolektion',
+        'Kurs löschen', // Page title
+        'Kurs löschen', // Menu title
+        'manage_options', // Capability
+        'svl-delete-course', // Menu slug
+        'svl_delete_course_page' // Callback function
+    );
 }
-add_action('admin_menu', 'svl_add_export_import_menu');
+add_action('admin_menu', 'svl_add_export_import_delete_menu');
 
+// Export Seite und Logik
 function svl_export_page() {
     ?>
     <div class="wrap">
@@ -51,10 +64,14 @@ function svl_export_page() {
     <?php
 }
 
+// Export Logik
 function svl_handle_export() {
     if ( isset($_POST['svl_action']) && $_POST['svl_action'] === 'export_csv' &&
          current_user_can('manage_options') && isset($_POST['svl_export_nonce']) &&
          wp_verify_nonce($_POST['svl_export_nonce'], 'svl_export_csv_nonce') ) {
+
+        // Check if a specific course ID is requested for export (used by delete page)
+        $course_id_to_export = isset($_POST['svl_export_course_id']) ? intval($_POST['svl_export_course_id']) : 0;
 
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename=lipalife_kurse_lektionen_' . date('Y-m-d') . '.csv');
@@ -63,17 +80,26 @@ function svl_handle_export() {
         fputs($output, "\xEF\xBB\xBF");
         fputcsv($output, array('Type', 'ID', 'Parent ID', 'Name', 'Description', 'Image URL', 'Video Link', 'Menu Order'));
 
-        // Exportiere alle Kurse (Top-Level-Terme)
-        $courses = get_terms(array(
-            'taxonomy'   => 'kurs',
-            'hide_empty' => false,
-            'parent'     => 0,
-            'orderby'    => 'name',
-            'order'      => 'ASC'
-        ));
+        $courses_to_export = array();
+        if ($course_id_to_export > 0) {
+            $course = get_term($course_id_to_export, 'kurs');
+            if ($course && !is_wp_error($course)) {
+                $courses_to_export[] = $course;
+            }
+        } else {
+            // Exportiere alle Kurse (Top-Level-Terme)
+            $courses_to_export = get_terms(array(
+                'taxonomy'   => 'kurs',
+                'hide_empty' => false,
+                'parent'     => 0,
+                'orderby'    => 'name',
+                'order'      => 'ASC'
+            ));
+        }
 
-        if ( !empty($courses) && !is_wp_error($courses) ) {
-            foreach ( $courses as $course ) {
+
+        if ( !empty($courses_to_export) && !is_wp_error($courses_to_export) ) {
+            foreach ( $courses_to_export as $course ) {
                 // Exportiere den Kurs
                 $course_image = get_term_meta($course->term_id, 'kurs_image_url', true);
                 fputcsv($output, array(
@@ -189,7 +215,7 @@ function svl_handle_export() {
 }
 add_action('admin_init', 'svl_handle_export');
 
-// Import Seite und Logik bleiben unverändert
+// Import Seite und Logik
 function svl_import_page() {
     ?>
     <div class="wrap">
@@ -202,6 +228,7 @@ function svl_import_page() {
         }
         ?>
         <p>Laden Sie eine CSV-Datei hoch, um Kurse, Module und Lektionen zu importieren. Die Datei sollte die Spalten "Type", "Parent ID", "Name", "Description", "Image URL", "Video Link" und "Menu Order" enthalten.</p>
+        <p><b>Hinweis:</b> Der Import versucht, bestehende Einträge anhand des 'Name' zu finden und zu aktualisieren. Neue Einträge werden erstellt.</p>
         <form method="post" action="" enctype="multipart/form-data">
             <input type="hidden" name="svl_action" value="import_csv">
             <?php wp_nonce_field('svl_import_csv_nonce', 'svl_import_nonce'); ?>
@@ -212,11 +239,9 @@ function svl_import_page() {
     <?php
 }
 
+// Import Logik
 function svl_handle_import() {
-    // Import Logik bleibt unverändert...
-    if (isset($_POST['svl_action']) && $_POST['svl_action'] === 'import_csv' &&
-        current_user_can('manage_options') && isset($_POST['svl_import_nonce']) &&
-        wp_verify_nonce($_POST['svl_import_nonce'], 'svl_import_csv_nonce')) {
+    if (isset($_POST['svl_action']) && $_POST['svl_action'] === 'import_csv' && current_user_can('manage_options') && isset($_POST['svl_import_nonce']) && wp_verify_nonce($_POST['svl_import_nonce'], 'svl_import_csv_nonce')) {
 
         if (empty($_FILES['svl_import_file']['name'])) {
             wp_redirect(add_query_arg(array('svl_import_message' => 'Bitte wählen Sie eine Datei aus.', 'svl_import_type' => 'error'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
@@ -234,13 +259,11 @@ function svl_handle_import() {
         }
 
         if (($handle = fopen($filepath, 'r')) !== FALSE) {
-            // Skip header row
             fgetcsv($handle);
             $imported_count = 0;
             $errors = array();
             $term_name_to_id = array();
 
-            // First pass: Importiere Kurse/Module
             $temp_handle = fopen($filepath, 'r');
             fgetcsv($temp_handle);
             while (($data = fgetcsv($temp_handle, 0, ',')) !== FALSE) {
@@ -264,7 +287,6 @@ function svl_handle_import() {
                             $errors[] = 'Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für "' . esc_html($name) . '" nicht gefunden.';
                         }
                     }
-
                     $existing_term = get_term_by('name', $name, 'kurs');
                     if ($existing_term && !is_wp_error($existing_term)) {
                         $updated = wp_update_term($existing_term->term_id, 'kurs', array(
@@ -299,7 +321,6 @@ function svl_handle_import() {
             }
             fclose($temp_handle);
 
-            // Zweiter Pass: Importiere Lektionen
             rewind($handle);
             fgetcsv($handle);
             while (($data = fgetcsv($handle, 0, ',')) !== FALSE) {
@@ -378,3 +399,189 @@ function svl_handle_import() {
     }
 }
 add_action('admin_init', 'svl_handle_import');
+
+
+// Kurs löschen Seite
+function svl_delete_course_page() {
+    ?>
+    <div class="wrap">
+        <h1>Kurs löschen</h1>
+        <?php
+        // Display messages
+        if (isset($_GET['svl_delete_message'])) {
+            $message = sanitize_text_field($_GET['svl_delete_message']);
+            $type = isset($_GET['svl_delete_type']) ? sanitize_text_field($_GET['svl_delete_type']) : 'success';
+            echo '<div class="notice notice-' . esc_attr($type) . ' is-dismissible"><p>' . esc_html($message) . '</p></div>';
+        }
+
+        $courses = get_terms(array(
+            'taxonomy'   => 'kurs',
+            'hide_empty' => false,
+            'parent'     => 0, // Only show top-level courses
+            'orderby'    => 'name',
+            'order'      => 'ASC'
+        ));
+
+        if (empty($courses) || is_wp_error($courses)) {
+            echo '<p>Keine Kurse zum Löschen gefunden.</p>';
+            return;
+        }
+        ?>
+
+        <p>Wählen Sie einen Kurs aus, den Sie löschen möchten. <b>WARNUNG:</b> Das Löschen eines Kurses entfernt auch alle zugehörigen Module und Lektionen sowie den Fortschritt der Benutzer für diese Lektionen. Dies kann nicht rückgängig gemacht werden!</p>
+
+        <form method="post" action="">
+            <input type="hidden" name="svl_action" value="prepare_delete_course">
+            <?php wp_nonce_field('svl_delete_course_nonce', 'svl_delete_nonce'); ?>
+
+            <label for="svl_course_to_delete">Kurs auswählen:</label>
+            <select name="svl_course_to_delete" id="svl_course_to_delete">
+                <option value="">-- Kurs auswählen --</option>
+                <?php
+                foreach ($courses as $course) {
+                    echo '<option value="' . esc_attr($course->term_id) . '">' . esc_html($course->name) . '</option>';
+                }
+                ?>
+            </select>
+            <button type="submit" class="button button-secondary">Weiter</button>
+        </form>
+
+        <?php
+        // Confirmation step
+        if (isset($_POST['svl_action']) && $_POST['svl_action'] === 'prepare_delete_course' &&
+            current_user_can('manage_options') && isset($_POST['svl_delete_nonce']) &&
+            wp_verify_nonce($_POST['svl_delete_nonce'], 'svl_delete_course_nonce') &&
+            isset($_POST['svl_course_to_delete']) && intval($_POST['svl_course_to_delete']) > 0 ) {
+
+            $course_id = intval($_POST['svl_course_to_delete']);
+            $course = get_term($course_id, 'kurs');
+
+            if ($course && !is_wp_error($course)) {
+                ?>
+                <hr>
+                <h2>Kurs "<?php echo esc_html($course->name); ?>" löschen</h2>
+                <p style="color: red; font-weight: bold;">Sind Sie sicher, dass Sie diesen Kurs und alle zugehörigen Module und Lektionen unwiderruflich löschen möchten?</p>
+                <p>Es wird empfohlen, den Kurs vorher zu exportieren, um eine Sicherung zu haben.</p>
+
+                <form method="post" action="">
+                    <input type="hidden" name="svl_action" value="export_csv">
+                    <input type="hidden" name="svl_export_course_id" value="<?php echo esc_attr($course_id); ?>">
+                    <?php wp_nonce_field('svl_export_csv_nonce', 'svl_export_nonce'); ?>
+                    <button type="submit" class="button button-primary">Kurs jetzt exportieren</button>
+                </form>
+
+                <form method="post" action="" onsubmit="return confirm('Dies kann NICHT rückgängig gemacht werden. Sind Sie ABSOLUT sicher, dass Sie den Kurs \'<?php echo esc_js($course->name); ?>\' und alle zugehörigen Daten löschen möchten?');">
+                    <input type="hidden" name="svl_action" value="confirm_delete_course">
+                    <input type="hidden" name="svl_course_id_to_delete" value="<?php echo esc_attr($course_id); ?>">
+                    <?php wp_nonce_field('svl_delete_course_nonce', 'svl_delete_nonce'); ?>
+                    <button type="submit" class="button button-danger" style="margin-top: 10px;">Ja, Kurs unwiderruflich löschen</button>
+                </form>
+                <?php
+            } else {
+                 echo '<div class="notice notice-error"><p>Ausgewählter Kurs wurde nicht gefunden.</p></div>';
+            }
+        }
+        ?>
+    </div>
+    <?php
+}
+
+// Handle Delete Action
+function svl_handle_delete_course() {
+    if (isset($_POST['svl_action']) && $_POST['svl_action'] === 'confirm_delete_course' &&
+        current_user_can('manage_options') && isset($_POST['svl_delete_nonce']) &&
+        wp_verify_nonce($_POST['svl_delete_nonce'], 'svl_delete_course_nonce') &&
+        isset($_POST['svl_course_id_to_delete']) && intval($_POST['svl_course_id_to_delete']) > 0 ) {
+
+        $course_id = intval($_POST['svl_course_id_to_delete']);
+        $course = get_term($course_id, 'kurs');
+
+        if ($course && !is_wp_error($course)) {
+            // Get all terms (including children) associated with this course
+            $terms_to_delete = get_terms(array(
+                'taxonomy'   => 'kurs',
+                'hide_empty' => false,
+                'child_of'   => $course_id,
+                'fields'     => 'ids' // Get only IDs
+            ));
+            // Add the main course term ID itself
+            $terms_to_delete[] = $course_id;
+
+            // Get all lessons associated with these terms
+            $lessons_to_delete_args = array(
+                'post_type'      => 'videolektion',
+                'posts_per_page' => -1,
+                'tax_query'      => array(
+                    array(
+                        'taxonomy' => 'kurs',
+                        'field'    => 'term_id',
+                        'terms'    => $terms_to_delete,
+                        'include_children' => true // Should already be covered by term IDs, but good measure
+                    )
+                ),
+                'fields' => 'ids' // Get only IDs
+            );
+            $lessons_query = new WP_Query($lessons_to_delete_args);
+            $lessons_to_delete_ids = $lessons_query->posts;
+            wp_reset_postdata();
+
+            $deleted_lessons_count = 0;
+            $deleted_terms_count = 0;
+            $delete_errors = array();
+
+            // Delete lessons
+            if (!empty($lessons_to_delete_ids)) {
+                foreach ($lessons_to_delete_ids as $lesson_id) {
+                    // Delete user meta for this lesson for all users (this can be resource intensive)
+                    // A more efficient way for large sites might involve direct DB queries or background processing
+                    $users = get_users(array('fields' => 'ID'));
+                    foreach ($users as $user_id) {
+                        delete_user_meta($user_id, 'svl_completed_' . $lesson_id);
+                    }
+
+                    // Delete the post (lesson)
+                    $deleted = wp_delete_post($lesson_id, true); // true = force delete (skip trash)
+                    if ($deleted) {
+                        $deleted_lessons_count++;
+                    } else {
+                        $delete_errors[] = 'Fehler beim Löschen der Lektion ID: ' . $lesson_id;
+                    }
+                }
+            }
+
+            // Delete terms (modules and the main course)
+            // Delete children first, then parents
+            $terms_to_delete = array_reverse($terms_to_delete); // Delete deepest terms first
+            if (!empty($terms_to_delete)) {
+                 foreach ($terms_to_delete as $term_id) {
+                     $deleted = wp_delete_term($term_id, 'kurs');
+                     if ($deleted && !is_wp_error($deleted)) {
+                         $deleted_terms_count++;
+                     } else {
+                         $delete_errors[] = 'Fehler beim Löschen des Terms ID: ' . $term_id . (is_wp_error($deleted) ? ' - ' . $deleted->get_error_message() : '');
+                     }
+                 }
+            }
+
+
+            $message = sprintf('Kurs "%s" erfolgreich gelöscht. %d Lektion(en) und %d Term(e) gelöscht.', esc_html($course->name), $deleted_lessons_count, $deleted_terms_count);
+            $type = 'success';
+
+            if (!empty($delete_errors)) {
+                $message .= ' Es gab Fehler: ' . implode('; ', $delete_errors);
+                $type = 'warning';
+            }
+
+            wp_redirect(add_query_arg(array('svl_delete_message' => $message, 'svl_delete_type' => $type), admin_url('edit.php?post_type=videolektion&page=svl-delete-course')));
+            exit;
+
+        } else {
+            wp_redirect(add_query_arg(array('svl_delete_message' => 'Fehler: Kurs zum Löschen nicht gefunden.', 'svl_delete_type' => 'error'), admin_url('edit.php?post_type=videolektion&page=svl-delete-course')));
+            exit;
+        }
+    }
+}
+add_action('admin_init', 'svl_handle_delete_course');
+
+// Ensure the new menu item is added
+add_action('admin_menu', 'svl_add_export_import_delete_menu');
