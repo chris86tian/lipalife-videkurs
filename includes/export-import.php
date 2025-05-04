@@ -8,15 +8,19 @@ if ( ! defined( 'ABSPATH' ) ) exit;
      - Exportiert direkt zugehörige Lektionen (ohne Unterbegriffe).
      - Exportiert anschließend alle Module (child-Terme) des Kurses.
      - Exportiert die Lektionen, die diesen Modulen zugeordnet sind.
+     - Exportiert den Namen des Eltern-Terms statt der ID.
   2. Import Logik:
-     - Importiert Kurse/Module und Lektionen basierend auf "Name" und "Parent Name".
+     - Zwei-Pass-Import.
+     - Pass 1: Importiert/aktualisiert Kurse/Module basierend auf "Name" und "Parent Name". Baut eine Map von Namen zu neuen Term-IDs.
+     - Pass 2: Importiert/aktualisiert Lektionen basierend auf "Name" und "Parent Name". Nutzt die Map aus Pass 1, um die Lektionen den korrekten Eltern-Terms zuzuordnen.
      - Aktualisiert bestehende Einträge oder erstellt neue.
+     - **Verbesserung:** Import-Header-Validierung toleranter gegenüber Anführungszeichen.
   3. Kurslöschfunktion:
      - Neue Admin-Seite zum Auswählen und Löschen eines Kurses.
      - Sicherheitsabfrage vor dem Löschen.
      - Option zum Exportieren des Kurses vor der Löschung.
   4. Hinweise:
-     - CSV-Spalten: Type, ID, Parent ID, Name, Description, Image URL, Video Link, Menu Order.
+     - CSV-Spalten: Type, Exported ID, Parent Name, Name, Description, Image URL, Video Link, Menu Order.
      - Hierarchie-Typen: "course", "module", "lesson".
 */
 
@@ -55,6 +59,7 @@ function svl_export_page() {
     <div class="wrap">
         <h1>Kurse und Lektionen exportieren</h1>
         <p>Klicken Sie auf den Button, um alle Kurse inkl. Module und Lektionen als hierarchische CSV-Datei herunterzuladen.</p>
+        <p>Die Datei enthält die Spalten: Type, Exported ID, Parent Name, Name, Description, Image URL, Video Link, Menu Order.</p>
         <form method="post" action="">
             <input type="hidden" name="svl_action" value="export_csv">
             <?php wp_nonce_field('svl_export_csv_nonce', 'svl_export_nonce'); ?>
@@ -78,7 +83,8 @@ function svl_handle_export() {
         $output = fopen('php://output', 'w');
         // UTF-8 BOM
         fputs($output, "\xEF\xBB\xBF");
-        fputcsv($output, array('Type', 'ID', 'Parent ID', 'Name', 'Description', 'Image URL', 'Video Link', 'Menu Order'));
+        // Updated header to reflect Parent Name instead of Parent ID
+        fputcsv($output, array('Type', 'Exported ID', 'Parent Name', 'Name', 'Description', 'Image URL', 'Video Link', 'Menu Order'));
 
         $courses_to_export = array();
         if ($course_id_to_export > 0) {
@@ -97,15 +103,14 @@ function svl_handle_export() {
             ));
         }
 
-
         if ( !empty($courses_to_export) && !is_wp_error($courses_to_export) ) {
             foreach ( $courses_to_export as $course ) {
                 // Exportiere den Kurs
                 $course_image = get_term_meta($course->term_id, 'kurs_image_url', true);
                 fputcsv($output, array(
                     'course',
-                    $course->term_id,
-                    '', // Kein Parent für Kurs
+                    $course->term_id, // Export the original ID for reference, but import uses Name
+                    '', // Kein Parent Name für Kurs
                     $course->name,
                     $course->description,
                     $course_image,
@@ -136,8 +141,8 @@ function svl_handle_export() {
                         $menu_order = get_post_field('menu_order', $lesson_id);
                         fputcsv($output, array(
                             'lesson',
-                            $lesson_id,
-                            $course->term_id,  // Parent ID als Kurs-ID
+                            $lesson_id, // Export the original ID for reference
+                            $course->name,  // Parent Name als Kurs-Name
                             get_the_title(),
                             get_the_content(),
                             '',
@@ -161,8 +166,8 @@ function svl_handle_export() {
                         // Exportiere das Modul
                         fputcsv($output, array(
                             'module',
-                            $module->term_id,
-                            $course->term_id, // Parent ID ist der Kurs
+                            $module->term_id, // Export the original ID for reference
+                            $course->name, // Parent Name ist der Kurs-Name
                             $module->name,
                             $module->description,
                             get_term_meta($module->term_id, 'kurs_image_url', true),
@@ -191,11 +196,11 @@ function svl_handle_export() {
                                 $lesson_id  = get_the_ID();
                                 $video_link = get_post_meta($lesson_id, '_svl_video_link', true);
                                 $menu_order = get_post_field('menu_order', $lesson_id);
-                                // Als Parent wird hier das Modul gesetzt
+                                // Als Parent Name wird hier das Modul gesetzt
                                 fputcsv($output, array(
                                     'lesson',
-                                    $lesson_id,
-                                    $module->term_id,
+                                    $lesson_id, // Export the original ID for reference
+                                    $module->name, // Parent Name ist der Modul-Name
                                     get_the_title(),
                                     get_the_content(),
                                     '',
@@ -227,8 +232,8 @@ function svl_import_page() {
             echo '<div class="notice notice-' . esc_attr($type) . ' is-dismissible"><p>' . esc_html($message) . '</p></div>';
         }
         ?>
-        <p>Laden Sie eine CSV-Datei hoch, um Kurse, Module und Lektionen zu importieren. Die Datei sollte die Spalten "Type", "Parent ID", "Name", "Description", "Image URL", "Video Link" und "Menu Order" enthalten.</p>
-        <p><b>Hinweis:</b> Der Import versucht, bestehende Einträge anhand des 'Name' zu finden und zu aktualisieren. Neue Einträge werden erstellt.</p>
+        <p>Laden Sie eine CSV-Datei hoch, um Kurse, Module und Lektionen zu importieren. Die Datei sollte die Spalten "Type", "Exported ID", "Parent Name", "Name", "Description", "Image URL", "Video Link" und "Menu Order" enthalten.</p>
+        <p><b>Hinweis:</b> Der Import versucht, bestehende Einträge anhand des 'Name' zu finden und zu aktualisieren. Neue Einträge werden erstellt. Die Zuordnung erfolgt über den 'Parent Name'.</p>
         <form method="post" action="" enctype="multipart/form-data">
             <input type="hidden" name="svl_action" value="import_csv">
             <?php wp_nonce_field('svl_import_csv_nonce', 'svl_import_nonce'); ?>
@@ -259,94 +264,141 @@ function svl_handle_import() {
         }
 
         if (($handle = fopen($filepath, 'r')) !== FALSE) {
-            fgetcsv($handle);
+            // Read header row
+            $header = fgetcsv($handle, 0, ',');
+            // Expected header columns
+            $expected_header = array('Type', 'Exported ID', 'Parent Name', 'Name', 'Description', 'Image URL', 'Video Link', 'Menu Order');
+
+            // Sanitize and trim quotes/whitespace from the read header for robust validation
+            $sanitized_header = array_map(function($col) {
+                return trim(trim($col, '"')); // Trim quotes and then whitespace
+            }, $header);
+
+            // Basic header validation
+            if (count($sanitized_header) < count($expected_header) || array_diff($expected_header, $sanitized_header)) {
+                 fclose($handle);
+                 wp_redirect(add_query_arg(array('svl_import_message' => 'Ungültiges CSV-Format. Bitte stellen Sie sicher, dass die Spalten korrekt sind.', 'svl_import_type' => 'error'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
+                 exit;
+            }
+
             $imported_count = 0;
             $errors = array();
-            $term_name_to_id = array();
+            $term_name_to_id = array(); // Map to store new term IDs by their name
 
-            $temp_handle = fopen($filepath, 'r');
-            fgetcsv($temp_handle);
-            while (($data = fgetcsv($temp_handle, 0, ',')) !== FALSE) {
-                if (count($data) < 8) {
-                    $errors[] = 'Zeile übersprungen: ' . implode(',', $data);
+            // --- Pass 1: Import/Update Terms (Courses and Modules) ---
+            rewind($handle); // Go back to the beginning of the file
+            fgetcsv($handle); // Skip header again
+
+            while (($data = fgetcsv($handle, 0, ',')) !== FALSE) {
+                // Ensure row has enough columns
+                if (count($data) < count($expected_header)) {
+                    $errors[] = 'Zeile übersprungen (zu wenige Spalten): ' . implode(',', $data);
                     continue;
                 }
+
                 $type = sanitize_text_field($data[0]);
-                $parent_name = sanitize_text_field($data[2]);
-                $name = sanitize_text_field($data[3]);
-                $description = sanitize_textarea_field($data[4]);
-                $image_url = esc_url_raw($data[5]);
+                // $exported_id = sanitize_text_field($data[1]); // Not used for import logic
+                $parent_name = sanitize_text_field($data[2]); // Parent Name
+                $name = sanitize_text_field($data[3]); // Term/Post Name
+                $description = sanitize_textarea_field($data[4]); // Description/Content
+                $image_url = esc_url_raw($data[5]); // Image URL
 
                 if ($type === 'course' || $type === 'module') {
                     $parent_term_id = 0;
                     if (!empty($parent_name)) {
+                        // Find parent term by name
                         $parent_term = get_term_by('name', $parent_name, 'kurs');
                         if ($parent_term && !is_wp_error($parent_term)) {
                             $parent_term_id = $parent_term->term_id;
                         } else {
-                            $errors[] = 'Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für "' . esc_html($name) . '" nicht gefunden.';
+                            // If parent term not found, log error and skip this term/module for now
+                            // It might be defined later in the CSV, but we process terms first
+                            $errors[] = 'Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für "' . esc_html($name) . '" nicht gefunden (Pass 1).';
+                            continue; // Skip this term/module if parent is missing in Pass 1
                         }
                     }
+
                     $existing_term = get_term_by('name', $name, 'kurs');
+
                     if ($existing_term && !is_wp_error($existing_term)) {
+                        // Update existing term
                         $updated = wp_update_term($existing_term->term_id, 'kurs', array(
                             'description' => $description,
                             'parent' => $parent_term_id,
                         ));
                         if (is_wp_error($updated)) {
-                            $errors[] = 'Fehler beim Aktualisieren von "' . esc_html($name) . '".';
+                            $errors[] = 'Fehler beim Aktualisieren von "' . esc_html($name) . '": ' . $updated->get_error_message();
                         } else {
+                            // Update term meta for image
                             if (!empty($image_url)) {
                                 update_term_meta($existing_term->term_id, 'kurs_image_url', $image_url);
                             } else {
                                 delete_term_meta($existing_term->term_id, 'kurs_image_url');
                             }
+                            // Store the new ID in the map
                             $term_name_to_id[$name] = $existing_term->term_id;
+                            $imported_count++;
                         }
                     } else {
+                        // Create new term
                         $inserted = wp_insert_term($name, 'kurs', array(
                             'description' => $description,
                             'parent' => $parent_term_id,
                         ));
                         if (is_wp_error($inserted)) {
-                            $errors[] = 'Fehler beim Erstellen von "' . esc_html($name) . '".';
+                            $errors[] = 'Fehler beim Erstellen von "' . esc_html($name) . '": ' . $inserted->get_error_message();
                         } else {
+                            // Add term meta for image
                             if (!empty($image_url)) {
                                 update_term_meta($inserted['term_id'], 'kurs_image_url', $image_url);
                             }
+                            // Store the new ID in the map
                             $term_name_to_id[$name] = $inserted['term_id'];
+                            $imported_count++;
                         }
                     }
                 }
             }
-            fclose($temp_handle);
 
-            rewind($handle);
-            fgetcsv($handle);
+            // --- Pass 2: Import/Update Lessons ---
+            rewind($handle); // Go back to the beginning of the file again
+            fgetcsv($handle); // Skip header again
+
             while (($data = fgetcsv($handle, 0, ',')) !== FALSE) {
-                if (count($data) < 8) continue;
+                 // Ensure row has enough columns
+                if (count($data) < count($expected_header)) {
+                    continue; // Already logged in Pass 1
+                }
+
                 $type = sanitize_text_field($data[0]);
-                $parent_name = sanitize_text_field($data[2]);
-                $name = sanitize_text_field($data[3]);
-                $content = wp_kses_post($data[4]);
-                $video_link = sanitize_text_field($data[6]);
-                $menu_order = intval($data[7]);
+                // $exported_id = sanitize_text_field($data[1]); // Not used for import logic
+                $parent_name = sanitize_text_field($data[2]); // Parent Name
+                $name = sanitize_text_field($data[3]); // Term/Post Name
+                $content = wp_kses_post($data[4]); // Description/Content
+                $video_link = sanitize_text_field($data[6]); // Video Link
+                $menu_order = intval($data[7]); // Menu Order
 
                 if ($type === 'lesson') {
                     $parent_term_id = 0;
                     if (!empty($parent_name)) {
+                        // Find parent term ID using the map built in Pass 1
                         if (isset($term_name_to_id[$parent_name])) {
                             $parent_term_id = $term_name_to_id[$parent_name];
                         } else {
+                            // If parent term not found in the map (meaning it wasn't created/updated),
+                            // try looking it up directly in case it existed before the import.
                             $parent_term = get_term_by('name', $parent_name, 'kurs');
                             if ($parent_term && !is_wp_error($parent_term)) {
                                 $parent_term_id = $parent_term->term_id;
+                                // Add to map for future reference in this pass
                                 $term_name_to_id[$parent_name] = $parent_term_id;
                             } else {
-                                $errors[] = 'Eltern-Kurs/Modul für Lektion "' . esc_html($name) . '" nicht gefunden.';
+                                $errors[] = 'Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für Lektion "' . esc_html($name) . '" nicht gefunden (Pass 2). Lektion wird ohne Kurs/Modul importiert.';
+                                // Continue without a parent term ID, lesson will be unassigned
                             }
                         }
                     }
+
                     $existing_lesson = get_page_by_title($name, OBJECT, 'videolektion');
                     $post_data = array(
                         'post_title'    => $name,
@@ -355,43 +407,55 @@ function svl_handle_import() {
                         'post_type'     => 'videolektion',
                         'menu_order'    => $menu_order,
                     );
+
                     if ($existing_lesson) {
+                        // Update existing lesson
                         $post_data['ID'] = $existing_lesson->ID;
                         $updated_id = wp_update_post($post_data);
                         if (is_wp_error($updated_id)) {
-                            $errors[] = 'Fehler beim Aktualisieren von Lektion "' . esc_html($name) . '".';
+                            $errors[] = 'Fehler beim Aktualisieren von Lektion "' . esc_html($name) . '": ' . $updated_id->get_error_message();
                         } else {
                             update_post_meta($updated_id, '_svl_video_link', $video_link);
+                            // Set terms (assign to parent)
                             if ($parent_term_id > 0) {
                                 wp_set_post_terms($updated_id, array($parent_term_id), 'kurs');
                             } else {
+                                // If no parent, ensure it's not assigned to any 'kurs' terms
                                 wp_set_post_terms($updated_id, null, 'kurs');
                             }
-                            $imported_count++;
+                            // imported_count already incremented in Pass 1 for terms,
+                            // we can count lessons separately or just count total processed rows.
+                            // Let's just count total processed items for simplicity.
+                            // $imported_count++; // Already counted terms, maybe count lessons separately?
                         }
                     } else {
+                        // Create new lesson
                         $inserted_id = wp_insert_post($post_data);
                         if (is_wp_error($inserted_id)) {
-                            $errors[] = 'Fehler beim Erstellen der Lektion "' . esc_html($name) . '".';
+                            $errors[] = 'Fehler beim Erstellen der Lektion "' . esc_html($name) . '": ' . $inserted_id->get_error_message();
                         } else {
                             update_post_meta($inserted_id, '_svl_video_link', $video_link);
+                            // Set terms (assign to parent)
                             if ($parent_term_id > 0) {
                                 wp_set_post_terms($inserted_id, array($parent_term_id), 'kurs');
                             }
-                            $imported_count++;
+                            // $imported_count++; // Already counted terms
                         }
                     }
                 }
             }
+
             fclose($handle);
-            $message = 'Import abgeschlossen. ' . $imported_count . ' Einträge verarbeitet.';
+
+            $message = 'Import abgeschlossen. ' . $imported_count . ' Terme (Kurse/Module) und Lektionen verarbeitet.';
             if (!empty($errors)) {
-                $message .= ' Fehler: ' . implode('; ', $errors);
+                $message .= ' Es gab Fehler: ' . implode('; ', $errors);
                 wp_redirect(add_query_arg(array('svl_import_message' => $message, 'svl_import_type' => 'warning'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
             } else {
                 wp_redirect(add_query_arg(array('svl_import_message' => $message, 'svl_import_type' => 'success'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
             }
             exit;
+
         } else {
             wp_redirect(add_query_arg(array('svl_import_message' => 'Fehler beim Öffnen der Datei.', 'svl_import_type' => 'error'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
             exit;
@@ -560,6 +624,8 @@ function svl_handle_delete_course() {
                      } else {
                          $delete_errors[] = 'Fehler beim Löschen des Terms ID: ' . $term_id . (is_wp_error($deleted) ? ' - ' . $deleted->get_error_message() : '');
                      }
+                     // Also delete term meta (like image URL)
+                     delete_term_meta($term_id, 'kurs_image_url');
                  }
             }
 
