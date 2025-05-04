@@ -1,0 +1,48 @@
+# Lipa LIFE Videokurs
+
+Version: 2.2
+
+## Neue Funktionen in 2.2
+
+- **Backend-Einstellungen für Button-Farben (erweitert):** Konfigurieren Sie nun auch die Farbe für den "Kurs starten" Button in der Kursübersicht über die Einstellungsseite im Backend.
+- **Backend-Einstellungen für Button-Farben (Lektion):** Konfigurieren Sie die Farben für die "Abschließen" und "Nochmals ansehen" Buttons bequem über eine neue Einstellungsseite im Backend.
+- **Plugin Refactoring:** Das Plugin wurde in mehrere Dateien aufgeteilt, um die Wartbarkeit und Erweiterbarkeit zu verbessern.
+- **Hierarchischer CSV-Export/Import:** Exportiert nun komplette Kurse zusammen mit zugehörigen Modulen und Lektionen in einer hierarchischen Datei.
+- **Verbesserte Kursübersicht:** Kurs-, Modul- und Lektionenstruktur wird nun übersichtlicher angezeigt.
+
+## Anleitung
+
+### Installation
+- ZIP hochladen unter WordPress > Plugins > Neu > Plugin hochladen.
+- Aktivieren.
+
+### Videolektion erstellen
+1. Unter "Videolektionen" > "Neu hinzufügen".
+2. Titel, Inhalt und optional einen Video-Link (YouTube/Vimeo) eingeben.
+3. Dem Kurs zuweisen (rechte Sidebar). **Wichtig:** Weisen Sie die Lektion dem spezifischen Modul/Ordner innerhalb eines Kurses zu, zu dem sie gehört.
+
+### Kurse und Module strukturieren
+- Gehen Sie zu "Videolektionen" > "Kurse".
+- Erstellen Sie Top-Level-Begriffe für Ihre Hauptkurse (z.B. "Kurs A", "Kurs B").
+- Erstellen Sie Unterbegriffe (Module/Ordner) unter den Hauptkursen (z.B. "Modul 1", "Modul 2" unter "Kurs A").
+- Weisen Sie Lektionen den entsprechenden Modulen/Ordnern zu.
+
+### Lektionen sortieren
+- Beim Bearbeiten einer Lektion: Feld "Reihenfolge" (Menu Order) ausfüllen. Eine kleinere Zahl bedeutet, dass die Lektion weiter oben angezeigt wird.
+
+### Kursbilder festlegen (per URL)
+1. Laden Sie das gewünschte Bild in Ihre WordPress-Medienbibliothek hoch oder nutzen Sie ein bereits hochgeladenes Bild.
+2. Klicken Sie auf das Bild in der Medienbibliothek und kopieren Sie die "Datei-URL".
+3. Bearbeiten Sie den Kurs unter "Videolektionen" > "Kurse" und fügen Sie die Bild-URL im Feld "Kursbild (Bild-URL)" ein.
+4. Speichern Sie den Kurs.
+
+### Kursübersicht Shortcode
+- Fügen Sie auf einer Seite den Shortcode `[svl_courses]` ein. Dieser Shortcode zeigt nur die Top-Level-Kurse an, sortiert alphabetisch.
+
+### Fortschritt und Button-Anpassung
+- Bei der Lektion wird der Fortschritt und ein Button zur Bestätigung (bzw. Rückgängigmachung) angezeigt.
+- Gehen Sie zu "Videolektionen" > "Einstellungen", um die Farben der Buttons anzupassen.
+
+### Export/Import
+- Unter dem Admin-Menü "Kurse/Lektionen Export" können Sie die vollständige Kursstruktur (Kurs, Module und Lektionen) als hierarchische CSV-Datei exportieren.
+- Über "Kurse/Lektionen Import" können Sie eine hierarchische CSV-Datei importieren, um komplette Kurse einzufügen oder zu aktualisieren.
