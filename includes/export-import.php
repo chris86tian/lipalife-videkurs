@@ -15,6 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
      - Pass 2: Importiert/aktualisiert Lektionen basierend auf "Name" und "Parent Name". Nutzt die Map aus Pass 1, um die Lektionen den korrekten Eltern-Terms zuzuordnen.
      - Aktualisiert bestehende Einträge oder erstellt neue.
      - **Verbesserung:** Import-Header-Validierung toleranter gegenüber Anführungszeichen.
+     - **Verbesserung:** Detailliertere Fehleranzeige im Admin-Bereich.
   3. Kurslöschfunktion:
      - Neue Admin-Seite zum Auswählen und Löschen eines Kurses.
      - Sicherheitsabfrage vor dem Löschen.
@@ -226,10 +227,26 @@ function svl_import_page() {
     <div class="wrap">
         <h1>Kurse und Lektionen importieren</h1>
         <?php
+        // Display general messages
         if (isset($_GET['svl_import_message'])) {
             $message = sanitize_text_field($_GET['svl_import_message']);
             $type = isset($_GET['svl_import_type']) ? sanitize_text_field($_GET['svl_import_type']) : 'success';
             echo '<div class="notice notice-' . esc_attr($type) . ' is-dismissible"><p>' . esc_html($message) . '</p></div>';
+        }
+
+        // Display detailed errors if they exist
+        $detailed_errors = get_transient('svl_import_detailed_errors');
+        if (!empty($detailed_errors)) {
+            echo '<div class="notice notice-error">';
+            echo '<h2>Detaillierte Importfehler:</h2>';
+            echo '<ul>';
+            foreach ($detailed_errors as $error) {
+                echo '<li>' . esc_html($error) . '</li>';
+            }
+            echo '</ul>';
+            echo '</div>';
+            // Clear the transient after displaying
+            delete_transient('svl_import_detailed_errors');
         }
         ?>
         <p>Laden Sie eine CSV-Datei hoch, um Kurse, Module und Lektionen zu importieren. Die Datei sollte die Spalten "Type", "Exported ID", "Parent Name", "Name", "Description", "Image URL", "Video Link" und "Menu Order" enthalten.</p>
@@ -247,6 +264,9 @@ function svl_import_page() {
 // Import Logik
 function svl_handle_import() {
     if (isset($_POST['svl_action']) && $_POST['svl_action'] === 'import_csv' && current_user_can('manage_options') && isset($_POST['svl_import_nonce']) && wp_verify_nonce($_POST['svl_import_nonce'], 'svl_import_csv_nonce')) {
+
+        // Clear previous detailed errors
+        delete_transient('svl_import_detailed_errors');
 
         if (empty($_FILES['svl_import_file']['name'])) {
             wp_redirect(add_query_arg(array('svl_import_message' => 'Bitte wählen Sie eine Datei aus.', 'svl_import_type' => 'error'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
@@ -271,7 +291,8 @@ function svl_handle_import() {
 
             // Sanitize and trim quotes/whitespace from the read header for robust validation
             $sanitized_header = array_map(function($col) {
-                return trim(trim($col, '"')); // Trim quotes and then whitespace
+                // Ensure $col is treated as a string before trimming
+                return trim(trim((string)$col, '"')); // Trim quotes and then whitespace
             }, $header);
 
             // Basic header validation
@@ -284,15 +305,18 @@ function svl_handle_import() {
             $imported_count = 0;
             $errors = array();
             $term_name_to_id = array(); // Map to store new term IDs by their name
+            $row_index = 1; // Start counting rows after header
 
             // --- Pass 1: Import/Update Terms (Courses and Modules) ---
             rewind($handle); // Go back to the beginning of the file
             fgetcsv($handle); // Skip header again
 
             while (($data = fgetcsv($handle, 0, ',')) !== FALSE) {
+                $row_index++; // Increment row index for the current row
+
                 // Ensure row has enough columns
                 if (count($data) < count($expected_header)) {
-                    $errors[] = 'Zeile übersprungen (zu wenige Spalten): ' . implode(',', $data);
+                    $errors[] = 'Zeile ' . $row_index . ': Übersprungen (zu wenige Spalten). Daten: ' . implode(',', $data);
                     continue;
                 }
 
@@ -313,7 +337,7 @@ function svl_handle_import() {
                         } else {
                             // If parent term not found, log error and skip this term/module for now
                             // It might be defined later in the CSV, but we process terms first
-                            $errors[] = 'Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für "' . esc_html($name) . '" nicht gefunden (Pass 1).';
+                            $errors[] = 'Zeile ' . $row_index . ': Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für "' . esc_html($name) . '" nicht gefunden (Pass 1).';
                             continue; // Skip this term/module if parent is missing in Pass 1
                         }
                     }
@@ -327,7 +351,7 @@ function svl_handle_import() {
                             'parent' => $parent_term_id,
                         ));
                         if (is_wp_error($updated)) {
-                            $errors[] = 'Fehler beim Aktualisieren von "' . esc_html($name) . '": ' . $updated->get_error_message();
+                            $errors[] = 'Zeile ' . $row_index . ': Fehler beim Aktualisieren von "' . esc_html($name) . '": ' . $updated->get_error_message();
                         } else {
                             // Update term meta for image
                             if (!empty($image_url)) {
@@ -346,7 +370,7 @@ function svl_handle_import() {
                             'parent' => $parent_term_id,
                         ));
                         if (is_wp_error($inserted)) {
-                            $errors[] = 'Fehler beim Erstellen von "' . esc_html($name) . '": ' . $inserted->get_error_message();
+                            $errors[] = 'Zeile ' . $row_index . ': Fehler beim Erstellen von "' . esc_html($name) . '": ' . $inserted->get_error_message();
                         } else {
                             // Add term meta for image
                             if (!empty($image_url)) {
@@ -363,8 +387,11 @@ function svl_handle_import() {
             // --- Pass 2: Import/Update Lessons ---
             rewind($handle); // Go back to the beginning of the file again
             fgetcsv($handle); // Skip header again
+            $row_index = 1; // Reset row index for the second pass
 
             while (($data = fgetcsv($handle, 0, ',')) !== FALSE) {
+                 $row_index++; // Increment row index for the current row
+
                  // Ensure row has enough columns
                 if (count($data) < count($expected_header)) {
                     continue; // Already logged in Pass 1
@@ -393,7 +420,7 @@ function svl_handle_import() {
                                 // Add to map for future reference in this pass
                                 $term_name_to_id[$parent_name] = $parent_term_id;
                             } else {
-                                $errors[] = 'Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für Lektion "' . esc_html($name) . '" nicht gefunden (Pass 2). Lektion wird ohne Kurs/Modul importiert.';
+                                $errors[] = 'Zeile ' . $row_index . ': Eltern-Kurs/Modul "' . esc_html($parent_name) . '" für Lektion "' . esc_html($name) . '" nicht gefunden (Pass 2). Lektion wird ohne Kurs/Modul importiert.';
                                 // Continue without a parent term ID, lesson will be unassigned
                             }
                         }
@@ -413,7 +440,7 @@ function svl_handle_import() {
                         $post_data['ID'] = $existing_lesson->ID;
                         $updated_id = wp_update_post($post_data);
                         if (is_wp_error($updated_id)) {
-                            $errors[] = 'Fehler beim Aktualisieren von Lektion "' . esc_html($name) . '": ' . $updated_id->get_error_message();
+                            $errors[] = 'Zeile ' . $row_index . ': Fehler beim Aktualisieren von Lektion "' . esc_html($name) . '": ' . $updated_id->get_error_message();
                         } else {
                             update_post_meta($updated_id, '_svl_video_link', $video_link);
                             // Set terms (assign to parent)
@@ -432,7 +459,7 @@ function svl_handle_import() {
                         // Create new lesson
                         $inserted_id = wp_insert_post($post_data);
                         if (is_wp_error($inserted_id)) {
-                            $errors[] = 'Fehler beim Erstellen der Lektion "' . esc_html($name) . '": ' . $inserted_id->get_error_message();
+                            $errors[] = 'Zeile ' . $row_index . ': Fehler beim Erstellen der Lektion "' . esc_html($name) . '": ' . $inserted_id->get_error_message();
                         } else {
                             update_post_meta($inserted_id, '_svl_video_link', $video_link);
                             // Set terms (assign to parent)
@@ -447,13 +474,17 @@ function svl_handle_import() {
 
             fclose($handle);
 
-            $message = 'Import abgeschlossen. ' . $imported_count . ' Terme (Kurse/Module) und Lektionen verarbeitet.';
+            $message = 'Import abgeschlossen. ' . $imported_count . ' Terme (Kurse/Module) verarbeitet.'; // Count only terms from Pass 1 for simplicity in this message
+            $type = 'success';
+
             if (!empty($errors)) {
-                $message .= ' Es gab Fehler: ' . implode('; ', $errors);
-                wp_redirect(add_query_arg(array('svl_import_message' => $message, 'svl_import_type' => 'warning'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
-            } else {
-                wp_redirect(add_query_arg(array('svl_import_message' => $message, 'svl_import_type' => 'success'), admin_url('edit.php?post_type=videolektion&page=svl-import')));
+                $message .= ' Es gab ' . count($errors) . ' Fehler oder Warnungen während des Imports.';
+                $type = 'warning';
+                // Store detailed errors in a transient
+                set_transient('svl_import_detailed_errors', $errors, 60 * 5); // Store for 5 minutes
             }
+
+            wp_redirect(add_query_arg(array('svl_import_message' => $message, 'svl_import_type' => $type), admin_url('edit.php?post_type=videolektion&page=svl-import')));
             exit;
 
         } else {
