@@ -2,7 +2,7 @@
 /*
 Plugin Name: Lipa LIFE Videokurs
 Description: Videolektionen mit Kursübersicht, Fortschritt und Navigation.
-Version: 2.5
+Version: 2.7
 Author: www.lipalife.de
 */
 
@@ -17,4 +17,4 @@ require_once plugin_dir_path(__FILE__) . 'includes/video-meta.php';
 require_once plugin_dir_path(__FILE__) . 'includes/completion.php';
 require_once plugin_dir_path(__FILE__) . 'includes/shortcodes.php';
 require_once plugin_dir_path(__FILE__) . 'includes/export-import.php';
-require_once plugin_dir_path(__FILE__) . 'includes/settings.php'; // Einstellungsdatei
+require_once plugin_dir_path(__FILE__) . 'includes/settings.php';

@@ -1,10 +1,11 @@
 # Lipa LIFE Videokurs
 
-Version: 2.5
+Version: 2.7
 
-## Neue Funktionen in 2.5
+## Neue Funktionen in 2.7
 
-- **Verbesserter CSV Import/Export:** Der Export verwendet nun den Namen des Eltern-Terms ("Parent Name") anstelle der ID, um die Zuordnung von Lektionen zu Modulen/Kursen und Modulen zu Kursen beim Import über verschiedene WordPress-Installationen hinweg korrekt beizubehalten. Der Import wurde robuster gestaltet, um auch CSV-Dateien mit Anführungszeichen in den Headern korrekt zu verarbeiten.
+- **Verbesserter CSV Import/Export:** Der Export verwendet nun den Namen des Eltern-Terms ("Parent Name") anstelle der ID, um die Zuordnung von Lektionen zu Modulen/Kursen und Modulen zu Kursen beim Import über verschiedene WordPress-Installationen hinweg korrekt beizubehalten. Der Import wurde robuster gestaltet, um auch CSV-Dateien mit Anführungszeichen in den Headern und BOM-Zeichen korrekt zu verarbeiten.
+- **Detaillierte Fehlermeldungen beim CSV Import:** Fehler während des Imports werden nun detaillierter angezeigt, um das Debuggen zu erleichtern.
 - **Kurslöschfunktion mit Sicherheitsabfrage und Export:** Eine neue Admin-Seite ermöglicht das sichere Löschen einzelner Kurse. Vor dem endgültigen Löschen wird eine Sicherheitsabfrage angezeigt und die Option geboten, den Kurs vorher zu exportieren.
 - **Lektionstextfarben angepasst:**
     - Standard-Textfarbe für Lektionen in der Navigation ist nun Schwarz.
